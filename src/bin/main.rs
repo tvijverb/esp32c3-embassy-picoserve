@@ -34,6 +34,10 @@ async fn main(spawner: Spawner) {
     // generator version: 0.4.0
 
     rtt_target::rtt_init_print!();
+    rprintln!("Starting esp32c3_embassy_picoserve...");
+
+    // Load environment variables from .env file.
+    // Fails if .env file not found, not readable or invalid.
 
     let config = esp_hal::Config::default().with_cpu_clock(CpuClock::max());
     let peripherals = esp_hal::init(config);

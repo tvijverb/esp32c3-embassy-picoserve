@@ -8,8 +8,8 @@ use esp_wifi::EspWifiController;
 
 use crate::mk_static;
 
-const SSID: &str = "myneighboursaresohot";
-const PASSWORD: &str = "p@nnenkoek";
+const SSID: &str = env!("SSID");
+const PASSWORD: &str = env!("PASSWORD");
 
 pub async fn start_wifi(
     esp_wifi_ctrl: &'static EspWifiController<'static>,

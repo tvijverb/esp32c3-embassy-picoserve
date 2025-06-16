@@ -1,4 +1,18 @@
 fn main() {
+    // Load .env file
+    if let Err(_) = dotenv::dotenv() {
+        println!("cargo:warning=No .env file found");
+    }
+
+    // Pass environment variables to the compilation
+    if let Ok(ssid) = std::env::var("SSID") {
+        println!("cargo:rustc-env=SSID={}", ssid);
+    }
+    
+    if let Ok(password) = std::env::var("PASSWORD") {
+        println!("cargo:rustc-env=PASSWORD={}", password);
+    }
+
     linker_be_nice();
     // make sure linkall.x is the last linker script (otherwise might cause problems with flip-link)
     println!("cargo:rustc-link-arg=-Tlinkall.x");
