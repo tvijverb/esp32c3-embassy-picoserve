@@ -1,9 +1,14 @@
 use embassy_net::Stack;
-use embassy_time::Duration;
+use embassy_time::{Duration, Instant};
 use esp_alloc as _;
-use picoserve::{response::File, routing, AppBuilder, AppRouter, Router};
+use jiff::tz::{self, TimeZone};
+use picoserve::{io::Read, make_static, request::Path, response::ResponseWriter, routing, AppBuilder, AppRouter, Router};
+use rtt_target::rprintln;
+use core::{fmt::Write, sync::atomic::AtomicUsize};
+use heapless::String;
 
 pub const WEB_TASK_POOL_SIZE: usize = 2;
+static TZ: TimeZone = tz::get!("Europe/Amsterdam");
 
 pub struct Application;
 
@@ -18,7 +23,14 @@ impl AppBuilder for Application {
     // }
 
     fn build_app(self) -> picoserve::Router<Self::PathRouter> {
-        picoserve::Router::new().route("/", routing::get(|| async move { "Hello World" }))
+        picoserve::Router::new()
+            .route("/", routing::get(|| async move { "Hello World" }))
+            .route("/version", routing::get(|| async move {
+                let mut version_string = String::<64>::new();
+                write!(version_string, "Version: {}", env!("CARGO_PKG_VERSION")).unwrap();
+                version_string
+            }))
+            .layer(TimeLayer)
     }
 }
 
@@ -70,4 +82,74 @@ pub async fn web_task(
         &mut http_buffer,
     )
     .await
+}
+
+struct TimedResponseWriter<'r, W> {
+    path: Path<'r>,
+    start_time: Instant,
+    response_writer: W,
+}
+
+impl<'r, W: ResponseWriter> ResponseWriter for TimedResponseWriter<'r, W> {
+    type Error = W::Error;
+
+    async fn write_response<
+        R: Read<Error = Self::Error>,
+        H: picoserve::response::HeadersIter,
+        B: picoserve::response::Body,
+    >(
+        self,
+        connection: picoserve::response::Connection<'_, R>,
+        response: picoserve::response::Response<H, B>,
+    ) -> Result<picoserve::ResponseSent, Self::Error> {
+        let status_code = response.status_code();
+
+        let result = self
+            .response_writer
+            .write_response(connection, response)
+            .await;
+
+        rprintln!(
+            "Path: {}; Status Code: {}; Response Time: {}ms",
+            self.path,
+            status_code,
+            self.start_time.elapsed().as_millis()
+        );
+
+        result
+    }
+}
+
+struct TimeLayer;
+
+impl<State, PathParameters> picoserve::routing::Layer<State, PathParameters> for TimeLayer {
+    type NextState = State;
+    type NextPathParameters = PathParameters;
+
+    async fn call_layer<
+        'a,
+        R: Read + 'a,
+        NextLayer: picoserve::routing::Next<'a, R, Self::NextState, Self::NextPathParameters>,
+        W: ResponseWriter<Error = R::Error>,
+    >(
+        &self,
+        next: NextLayer,
+        state: &State,
+        path_parameters: PathParameters,
+        request_parts: picoserve::request::RequestParts<'_>,
+        response_writer: W,
+    ) -> Result<picoserve::ResponseSent, W::Error> {
+        let path = request_parts.path();
+
+        next.run(
+            state,
+            path_parameters,
+            TimedResponseWriter {
+                path,
+                start_time: Instant::now(),
+                response_writer,
+            },
+        )
+        .await
+    }
 }

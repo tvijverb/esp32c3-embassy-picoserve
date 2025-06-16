@@ -2,6 +2,7 @@ use embassy_executor::Spawner;
 use embassy_net::{DhcpConfig, Runner, Stack, StackResources};
 use embassy_time::{Duration, Timer};
 use esp_hal::rng::Rng;
+use esp_hal::rtc_cntl::Rtc;
 use rtt_target::rprintln;
 use esp_wifi::wifi::{self, WifiController, WifiDevice, WifiEvent, WifiState};
 use esp_wifi::EspWifiController;
@@ -10,6 +11,7 @@ use crate::mk_static;
 
 const SSID: &str = env!("SSID");
 const PASSWORD: &str = env!("PASSWORD");
+const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub async fn start_wifi(
     esp_wifi_ctrl: &'static EspWifiController<'static>,

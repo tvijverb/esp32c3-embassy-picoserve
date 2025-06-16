@@ -3,6 +3,9 @@
 
 pub mod web;
 pub mod wifi;
+pub mod clock;
+pub mod http;
+pub mod random;
 
 #[macro_export]
 macro_rules! mk_static {
