@@ -30,7 +30,7 @@ pub async fn start_wifi(
     let (stack, runner) = embassy_net::new(
         wifi_interface,
         net_config,
-        mk_static!(StackResources<3>, StackResources::<3>::new()),
+        mk_static!(StackResources<6>, StackResources::<6>::new()),
         net_seed,
     );
 

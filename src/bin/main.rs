@@ -94,7 +94,7 @@ async fn main(spawner: Spawner) {
     rprintln!("Now is {}", clock.now().unwrap());
 
     // let web_app = lib::web::WebApp::default(clock.clone());
-    let web_app = lib::web::WebApp::new_with_clock(clock.clone());
+    let web_app = lib::web::WebApp::new_with_clock(clock.clone(), stack);
 
     for id in 0..lib::web::WEB_TASK_POOL_SIZE {
         spawner.must_spawn(lib::web::web_task(
@@ -135,10 +135,10 @@ async fn load_clock(
     stack: Stack<'static>,
     rng: Rng,
 ) -> Clock {
-    let clock = if let Some(clock) = Clock::from_rtc_memory() {
-        rprintln!("Clock loaded from RTC memory");
-        clock
-    } else {
+    // let clock = if let Some(clock) = Clock::from_rtc_memory() {
+    //     rprintln!("Clock loaded from RTC memory");
+    //     clock
+    // } else {
         rprintln!("Synchronize clock from server");
         let mut http_client = Client::new(stack, RngWrapper::from(rng));
         let clock = Clock::from_server(&mut http_client).await;
@@ -151,7 +151,7 @@ async fn load_clock(
             rprintln!("Clock synchronized from server");
             return clock.unwrap();
         }
-    };
+    // };
 
-    clock
+    // clock
 }

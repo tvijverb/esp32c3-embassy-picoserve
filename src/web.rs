@@ -14,6 +14,7 @@ pub const WEB_TASK_POOL_SIZE: usize = 1;
 /// The state used by the web app, containing the clock
 pub struct AppState {
     pub clock: Clock,
+    pub stack: Stack<'static>,
 }
 
 /// An extractor for getting the clock from the app state
@@ -88,16 +89,16 @@ pub struct WebApp {
     pub state: &'static AppState,
 }
 
-impl Default for WebApp {
-    fn default() -> Self {
-        // Create a default clock for the default implementation
-        let default_clock = Clock::new(0, time::UtcOffset::UTC);
-        Self::new_with_clock(default_clock)
-    }
-}
+// impl Default for WebApp {
+//     fn default() -> Self {
+//         // Create a default clock for the default implementation
+//         let default_clock = Clock::new(0, time::UtcOffset::UTC);
+//         Self::new_with_clock(default_clock, Stack::default())
+//     }
+// }
 
 impl WebApp {
-    pub fn new_with_clock(clock: Clock) -> Self {
+    pub fn new_with_clock(clock: Clock, stack: Stack<'static>) -> Self {
         let router = picoserve::make_static!(AppRouter<Application>, Application.build_app());
 
         let config = picoserve::make_static!(
@@ -113,7 +114,7 @@ impl WebApp {
 
         let state = picoserve::make_static!(
             AppState,
-            AppState { clock }
+            AppState { clock, stack}
         );
 
         Self { router, config, state }
