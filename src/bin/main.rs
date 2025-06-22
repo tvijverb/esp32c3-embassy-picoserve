@@ -5,6 +5,8 @@
     reason = "mem::forget is generally not safe to do with esp_hal types, especially those \
     holding buffers for the duration of a data transfer."
 )]
+#![feature(type_alias_impl_trait)]
+#![feature(impl_trait_in_assoc_type)]
 
 use embassy_executor::Spawner;
 use embassy_net::Stack;
