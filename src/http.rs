@@ -98,13 +98,14 @@ impl Client {
         };
         let utc_result = OffsetDateTime::from_unix_timestamp(timestamp);
         let utc = utc_result.unwrap(); // We assume the timestamp is valid
+        rprintln!("Current UTC time: {}", utc);
         Ok(utc)
     }
 }
 
 impl ClientTrait for Client {
     async fn send_request(&mut self, url: &str) -> Result<Vec<u8, RESPONSE_SIZE>, Error> {
-        rprintln!("Send HTTPs request to {url}");
+        rprintln!("Send HTTPs request to {}", url);
 
         rprintln!("Create DNS socket");
         let dns_socket = DnsSocket::new(self.stack);
@@ -144,6 +145,7 @@ impl ClientTrait for Client {
 }
 
 /// An error within an HTTP request
+#[derive(Debug)]
 pub enum Error {
     /// Response was too large
     ResponseTooLarge,

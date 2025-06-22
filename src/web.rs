@@ -1,28 +1,42 @@
 use embassy_net::Stack;
 use embassy_time::{Duration, Instant};
 use esp_alloc as _;
-use jiff::tz::{self, TimeZone};
-use picoserve::{io::Read, make_static, request::Path, response::ResponseWriter, routing, AppBuilder, AppRouter, Router};
+use picoserve::{io::Read, request::Path, response::ResponseWriter, routing, AppRouter, Router, AppWithStateBuilder};
 use rtt_target::rprintln;
-use core::{fmt::Write, sync::atomic::AtomicUsize};
+use core::fmt::Write;
 use heapless::String;
+use time;
 
-pub const WEB_TASK_POOL_SIZE: usize = 2;
-static TZ: TimeZone = tz::get!("Europe/Amsterdam");
+use crate::clock::Clock;
+
+pub const WEB_TASK_POOL_SIZE: usize = 1;
+
+/// The state used by the web app, containing the clock
+pub struct AppState {
+    pub clock: Clock,
+}
+
+/// An extractor for getting the clock from the app state
+pub struct ClockExtractor(pub Clock);
+
+impl<'r> picoserve::extract::FromRequestParts<'r, AppState> for ClockExtractor {
+    type Rejection = core::convert::Infallible;
+
+    async fn from_request_parts(
+        state: &'r AppState,
+        _request_parts: &picoserve::request::RequestParts<'r>,
+    ) -> Result<Self, Self::Rejection> {
+        Ok(Self(state.clock.clone()))
+    }
+}
 
 pub struct Application;
 
-impl AppBuilder for Application {
-    type PathRouter = impl routing::PathRouter;
+impl AppWithStateBuilder for Application {
+    type State = AppState;
+    type PathRouter = impl routing::PathRouter<AppState>;
 
-    // fn build_app(self) -> picoserve::Router<Self::PathRouter> {
-    //     picoserve::Router::new().route(
-    //         "/",
-    //         routing::get_service(File::html(include_str!("index.html"))),
-    //     )
-    // }
-
-    fn build_app(self) -> picoserve::Router<Self::PathRouter> {
+    fn build_app(self) -> picoserve::Router<Self::PathRouter, AppState> {
         picoserve::Router::new()
             .route("/", routing::get(|| async move { "Hello World" }))
             .route("/version", routing::get(|| async move {
@@ -30,17 +44,40 @@ impl AppBuilder for Application {
                 write!(version_string, "Version: {}", env!("CARGO_PKG_VERSION")).unwrap();
                 version_string
             }))
+            .route("/time", routing::get(|ClockExtractor(clock)| async move {
+                match clock.now() {
+                    Ok(time) => {
+                        let mut time_string = String::<128>::new();
+                        write!(time_string, "Current time: {}", time).unwrap();
+                        time_string
+                    }
+                    Err(_) => {
+                        let mut error_string = String::<128>::new();
+                        write!(error_string, "Error getting current time").unwrap();
+                        error_string
+                    }
+                }
+            }))
             .layer(TimeLayer)
     }
 }
 
 pub struct WebApp {
-    pub router: &'static Router<<Application as AppBuilder>::PathRouter>,
+    pub router: &'static Router<<Application as AppWithStateBuilder>::PathRouter, AppState>,
     pub config: &'static picoserve::Config<Duration>,
+    pub state: &'static AppState,
 }
 
 impl Default for WebApp {
     fn default() -> Self {
+        // Create a default clock for the default implementation
+        let default_clock = Clock::new(0, time::UtcOffset::UTC);
+        Self::new_with_clock(default_clock)
+    }
+}
+
+impl WebApp {
+    pub fn new_with_clock(clock: Clock) -> Self {
         let router = picoserve::make_static!(AppRouter<Application>, Application.build_app());
 
         let config = picoserve::make_static!(
@@ -54,7 +91,12 @@ impl Default for WebApp {
             .keep_connection_alive()
         );
 
-        Self { router, config }
+        let state = picoserve::make_static!(
+            AppState,
+            AppState { clock }
+        );
+
+        Self { router, config, state }
     }
 }
 
@@ -65,13 +107,14 @@ pub async fn web_task(
     stack: Stack<'static>,
     router: &'static AppRouter<Application>,
     config: &'static picoserve::Config<Duration>,
+    state: &'static AppState,
 ) -> ! {
     let port = 80;
     let mut tcp_rx_buffer = [0; 1024];
     let mut tcp_tx_buffer = [0; 1024];
     let mut http_buffer = [0; 2048];
 
-    picoserve::listen_and_serve(
+    picoserve::listen_and_serve_with_state(
         id,
         router,
         config,
@@ -80,6 +123,7 @@ pub async fn web_task(
         &mut tcp_rx_buffer,
         &mut tcp_tx_buffer,
         &mut http_buffer,
+        state,
     )
     .await
 }
@@ -122,8 +166,8 @@ impl<'r, W: ResponseWriter> ResponseWriter for TimedResponseWriter<'r, W> {
 
 struct TimeLayer;
 
-impl<State, PathParameters> picoserve::routing::Layer<State, PathParameters> for TimeLayer {
-    type NextState = State;
+impl<PathParameters> picoserve::routing::Layer<AppState, PathParameters> for TimeLayer {
+    type NextState = AppState;
     type NextPathParameters = PathParameters;
 
     async fn call_layer<
@@ -134,7 +178,7 @@ impl<State, PathParameters> picoserve::routing::Layer<State, PathParameters> for
     >(
         &self,
         next: NextLayer,
-        state: &State,
+        state: &AppState,
         path_parameters: PathParameters,
         request_parts: picoserve::request::RequestParts<'_>,
         response_writer: W,
