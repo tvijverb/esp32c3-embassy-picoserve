@@ -55,7 +55,7 @@ pub struct Client {
     rng: RngWrapper,
 
     /// TCP client state
-    tcp_client_state: TcpClientState<1, 4096, 4096>,
+    tcp_client_state: TcpClientState<2, 4096, 4096>,
 
     /// Buffer for received TLS data
     read_record_buffer: [u8; 16640],
@@ -68,7 +68,7 @@ impl Client {
     /// Create a new client
     pub fn new(stack: Stack<'static>, rng: RngWrapper) -> Self {
         rprintln!("Create TCP client state");
-        let tcp_client_state = TcpClientState::<1, 4096, 4096>::new();
+        let tcp_client_state = TcpClientState::<2, 4096, 4096>::new();
 
         Self {
             stack,

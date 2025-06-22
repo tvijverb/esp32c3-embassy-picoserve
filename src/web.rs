@@ -48,13 +48,33 @@ impl AppWithStateBuilder for Application {
                 match clock.now() {
                     Ok(time) => {
                         let mut time_string = String::<128>::new();
-                        write!(time_string, "Current time: {}", time).unwrap();
+                        write!(time_string, "{}", time).unwrap();
                         time_string
                     }
                     Err(_) => {
                         let mut error_string = String::<128>::new();
                         write!(error_string, "Error getting current time").unwrap();
                         error_string
+                    }
+                }
+            }))
+            .route("/time-since-boot", routing::get(|ClockExtractor(clock)| async move {
+                let seconds = clock.time_since_boot();
+                let mut response = String::<128>::new();
+                write!(response, "Time since boot: {} seconds", seconds).unwrap();
+                response
+            }))
+            .route("/time-since-rtc-update", routing::get(|ClockExtractor(clock)| async move {
+                match clock.time_since_rtc_update() {
+                    Some(seconds) => {
+                        let mut response = String::<128>::new();
+                        write!(response, "Time since RTC update: {} seconds", seconds).unwrap();
+                        response
+                    }
+                    None => {
+                        let mut response = String::<128>::new();
+                        write!(response, "No RTC update has been performed").unwrap();
+                        response
                     }
                 }
             }))

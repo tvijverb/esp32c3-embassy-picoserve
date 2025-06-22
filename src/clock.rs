@@ -11,6 +11,7 @@
 use embassy_time::Duration;
 use embassy_time::Instant;
 
+use esp_hal::clock;
 use esp_hal::ram;
 
 use time::error::ComponentRange as TimeComponentRange;
@@ -25,8 +26,9 @@ use crate::http::Client as HttpClient;
 ///
 /// This is a statically allocated variable and it is placed in the RTC Fast
 /// memory, which survives deep sleep.
+/// Format: (boot_time, offset_seconds, last_rtc_update_time)
 #[ram(rtc_fast)]
-static mut BOOT_TIME: (u64, i32) = (0, 0);
+static mut BOOT_TIME: (u64, i32, u64) = (0, 0, 0);
 
 /// A clock
 #[derive(Clone, Debug)]
@@ -75,14 +77,19 @@ impl Clock {
 
         let offset = now.offset();
 
-        Ok(Self::new(current_time, offset))
+        let clock = Self::new(current_time, offset);
+
+        // Save the clock to RTC memory
+        clock.save_to_rtc_memory(Duration::from_secs(0));
+
+        Ok(clock)
     }
 
     /// Initialize clock from RTC Fast memory
     pub fn from_rtc_memory() -> Option<Self> {
         // SAFETY:
         // There is only one thread
-        let (now, offset_in_seconds) = unsafe { BOOT_TIME };
+        let (now, offset_in_seconds, _) = unsafe { BOOT_TIME };
         let offset = UtcOffset::from_whole_seconds(offset_in_seconds).ok();
 
         if now == 0 {
@@ -100,7 +107,7 @@ impl Clock {
         // SAFETY:
         // There is only one thread
         unsafe {
-            BOOT_TIME = (then, offset_in_seconds);
+            BOOT_TIME = (then, offset_in_seconds, now);
         }
     }
 
@@ -118,6 +125,24 @@ impl Clock {
     pub fn now_as_epoch(&self) -> u64 {
         let from_boot = Instant::now().as_secs();
         self.boot_time + from_boot
+    }
+
+    /// Return time since boot in seconds
+    pub fn time_since_boot(&self) -> u64 {
+        Instant::now().as_secs()
+    }    /// Return time since the clock was last saved to RTC memory
+    /// Returns None if no time was saved to RTC memory, or the duration since the save
+    pub fn time_since_rtc_update(&self) -> Option<u64> {
+        // SAFETY: There is only one thread
+        let (_, _, rtc_update_time) = unsafe { BOOT_TIME };
+        
+        if rtc_update_time == 0 {
+            // No RTC time was saved
+            None
+        } else {
+            let current_time = self.now_as_epoch();
+            Some(current_time.saturating_sub(rtc_update_time))
+        }
     }
 }
 
@@ -141,7 +166,7 @@ fn duration_to_next_rounded_wakeup(now: Duration, period: Duration) -> Duration 
 #[derive(Debug)]
 pub enum Error {
     /// A time component is out of range
-    TimeComponentRange(#[expect(unused, reason = "Never read directly")] TimeComponentRange),
+    TimeComponentRange(TimeComponentRange),
 
     /// The time is invalid in the current time offset
     InvalidInOffset,
